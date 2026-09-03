@@ -34,6 +34,38 @@ wechat-cli --mode observe \
 
 ## 手工探针
 
+推荐使用项目封装的快捷命令：
+
+```bash
+# 查看当前控件树
+./scripts/wechat.sh tree
+
+# 持续查看经过 Go 标准化和去重后的消息事件
+./scripts/wechat.sh watch
+
+# 查看 Runtime 日志
+./scripts/wechat.sh logs
+
+# 查看所有命令
+./scripts/wechat.sh help
+```
+
+如果只想查看控件树中的关键节点，可以配合 `jq`：
+
+```bash
+./scripts/wechat.sh tree | jq -c '
+  select(
+    .name == "Chats" or
+    .name == "Messages" or
+    .role == "list item" or
+    .role == "image" or
+    .editable == true
+  )
+'
+```
+
+以下为底层完整命令，仅用于排查环境变量或 AT-SPI 连接问题。
+
 进入容器后可执行控件树输出：
 
 ```bash
