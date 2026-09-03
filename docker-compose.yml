@@ -1,0 +1,28 @@
+services:
+  wechat-runtime:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        WECHAT_VERSION: "4.1.1.8"
+        WECHAT_SHA256: "c9765e87ee5133bf4bb50d585c1814fafd995e3fb0da62c5ed07259b43dada7b"
+    environment:
+      DISPLAY: ":99"
+      SCREEN_SIZE: "1920x1080x24"
+      NOVNC_PORT: "6080"
+      VNC_PORT: "5900"
+    ports:
+      - "127.0.0.1:6080:6080"
+    volumes:
+      - wechat-state:/data/wechat
+      - wechat-config:/data/config
+      - wechat-logs:/data/logs
+      - wechat-diagnostics:/data/diagnostics
+    restart: unless-stopped
+
+volumes:
+  wechat-state:
+  wechat-config:
+  wechat-logs:
+  wechat-diagnostics:

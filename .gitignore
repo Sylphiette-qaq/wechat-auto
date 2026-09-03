@@ -1,0 +1,41 @@
+# Go build and test output
+/bin/
+/dist/
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Local binaries produced by ad-hoc builds
+/wechat-cli
+/cmd/wechat-cli/wechat-cli
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE and local assistant metadata
+.idea/
+.vscode/
+.codex/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Docker/runtime state, logs and diagnostics
+/logs/
+/diagnostics/
+/data/
+*.log
+
+# WeChat installation packages are external, proprietary build inputs.
+# Keep the explanatory README, but never commit the package itself.
+/artifacts/*.deb
+
+# OS metadata
+.DS_Store
+Thumbs.db
