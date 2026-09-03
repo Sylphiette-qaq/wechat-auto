@@ -11,8 +11,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"wechatAuto/internal/probe"
-	"wechatAuto/internal/wechatmodel"
+	"wechat-auto/internal/probe"
+	"wechat-auto/internal/wechatmodel"
 )
 
 type stringList []string

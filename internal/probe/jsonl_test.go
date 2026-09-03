@@ -2,7 +2,7 @@ package probe
 
 import (
 	"testing"
-	"wechatAuto/internal/wechatmodel"
+	"wechat-auto/internal/wechatmodel"
 )
 
 func TestParseRecordDerivesIdentity(t *testing.T) {

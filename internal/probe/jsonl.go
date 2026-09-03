@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"wechatAuto/internal/wechatmodel"
+	"wechat-auto/internal/wechatmodel"
 )
 
 // Record is the intentionally small JSON contract consumed from the Python
