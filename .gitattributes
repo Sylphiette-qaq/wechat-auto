@@ -1,0 +1,6 @@
+# 这些文件会被 Linux/Docker 直接执行或拷入容器，
+# 必须始终以 LF 检出（覆盖 core.autocrlf=true 的 CRLF 转换）。
+*.sh text eol=lf
+*.py text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf

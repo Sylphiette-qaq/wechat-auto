@@ -36,6 +36,16 @@ venv/
 # Keep the explanatory README, but never commit the package itself.
 /artifacts/*.deb
 
+# Local AT-SPI test fixtures captured from the live WeChat tree.
+# These JSONL files contain real chat content (group/sender names and
+# message bodies) and must not be committed. Regenerate them locally
+# from a `wechat.sh tree` dump before running scripts/test_parse.py.
+/scripts/testdata/
+
+# Local scratch files (live tree dumps, watch output, ad-hoc analysis).
+# These also contain real chat content and must not be committed.
+/.scratch/
+
 # OS metadata
 .DS_Store
 Thumbs.db

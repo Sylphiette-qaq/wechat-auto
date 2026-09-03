@@ -34,8 +34,9 @@ RUN useradd --create-home --uid 1000 --shell /bin/bash wechat \
 
 COPY docker/entrypoint.sh /usr/local/bin/wechat-runtime-entrypoint
 COPY scripts/atspi_probe.py /app/scripts/atspi_probe.py
+COPY scripts/atspi_parse.py /app/scripts/atspi_parse.py
 COPY --from=go-builder /out/wechat-cli /app/wechat-cli
 RUN chmod 0755 /usr/local/bin/wechat-runtime-entrypoint
-RUN chmod 0755 /app/scripts/atspi_probe.py /app/wechat-cli
+RUN chmod 0755 /app/scripts/atspi_probe.py /app/scripts/atspi_parse.py /app/wechat-cli
 WORKDIR /app
 ENTRYPOINT ["/usr/local/bin/wechat-runtime-entrypoint"]

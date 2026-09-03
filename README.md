@@ -1,6 +1,6 @@
 # Linux Docker 微信 AT-SPI 最小 CLI
 
-这是第一阶段验证工程：固定 Linux 微信 4.1.1.8（`linux/amd64`），在 Docker 中启动 Xvfb、D-Bus、AT-SPI 和 noVNC，并通过 CLI 输出当前前台会话的 AT-SPI 控件树或文本消息候选。
+这是第一阶段验证工程：固定 Linux 微信 4.1.1.8（`linux/amd64`），在 Docker 中启动 Xvfb、D-Bus、AT-SPI 和 noVNC，并通过 CLI 输出当前前台会话的 AT-SPI 控件树或消息事件。`watch` 模式读取的是**当前打开的群聊**：以 `Chats` 会话列表行为会话上下文（群名/群类型/未读/提及聚合/发送者），以 `Messages` 消息列表内容行为逐条权威正文，正文含 `@<WECHAT_BOT_NAME>` 的消息标记为提及消息（`is_mention=true`）。
 
 ## 准备安装包
 
@@ -79,9 +79,42 @@ docker compose exec wechat-runtime \
 
 消息观测输出为 JSON Lines，诊断日志写入容器日志目录和标准错误。
 
+## 群聊消息读取（watch）
+
+`watch` 每次轮询执行：
+
+1. 解析 `Chats` 列表全部行 → 会话上下文（`chat_name`、`chat_type`、`unread_count`、聚合 `mentioned`、最新一条 `sender`/预览正文/时间；群聊行含 `sender: 正文` 冒号段，私聊行没有）。
+2. 定位**当前打开的会话**：会话窗标题文本（Messages 列表之前的短文本，允许 editable）必须与某个 chats 行会话名一致，避免把错误提示等状态文案当标题。
+3. 仅当打开会话判定为**群聊**时继续：切分 `Messages` 内容行（时间行=可选区段头），逐条输出 message 事件。
+4. 每条事件：
+   - `text` = 内容行正文（strip 首尾空白，保留正文内 U+2005），**不以 chats 预览顶替**——预览只指向最新一条，提及消息可能更早（此时 chats 行显示的是更新、非 @ 的消息）；
+   - `is_mention` = 群聊且正文含 `@<WECHAT_BOT_NAME>`（后随空白/U+2005/标点或结尾）；
+   - `sender_name` = 仅当该行是**最新一条**且正文与 chats 预览一致时取预览发送者，否则为空（AT-SPI 内容行不暴露更早消息的发送者）；
+   - `message_time` = 区段时间；最新匹配行取 chats 行的权威时间（区段头可能滞后）；
+   - `message_id` = `derived-time-<sha256(chat|sender|text|time)>`——同文本不同时间可区分，Go 去重不会吞掉第二条。
+5. 增量去重：seen 键 = `(chat_name, text, time_block)`；首扫只记基线，`--emit-existing` 才回放既有行。
+
+依赖环境变量：
+
+| 变量 | 说明 | 默认 |
+|---|---|---|
+| `WECHAT_BOT_NAME` | 机器人显示昵称，用于识别 `@昵称` 提及消息 | 空（未配置则无逐行 @判定，仅诊断提示） |
+| `WECHAT_CHAT_TYPE` | `auto`（自动判定，默认）/ `direct` / `group`（强制） | `auto` |
+| `WECHAT_ACCOUNT_ID` | 事件 `account_id` | `default` |
+
+探针同样接受 `--bot-name` / `--chat-type` 显式参数。容器内运行示例：
+
+```bash
+docker compose exec -e WECHAT_BOT_NAME=小半夏 wechat-runtime \
+  /app/wechat-cli --mode observe \
+  --probe python3 --probe-arg /app/scripts/atspi_probe.py --probe-arg watch
+```
+
 ## 当前限制
 
-- 仅支持 `linux/amd64`、微信 4.1.1.8、当前前台会话和普通文本。
+- 仅支持 `linux/amd64`、微信 4.1.1.8、**当前打开且为群聊**的会话；私聊/未打开的群聊不产事件（会打 `scan_state` 诊断）。
 - 发送命令尚未实现。
 - 本机 macOS 无法直接验证真实 AT-SPI；必须在 Docker Linux 图形环境中登录后验收。
+- 轮询间隙内出现又消失的消息可能漏报；同一区段时间（HH:MM）内同文本重复会合并为一条（微信未暴露秒级/原生 ID）。
+- 更早（非最新）消息的发送者不可得；提及消息滚出可见区时正文读不到（只保留诊断与 chats 上下文）。
 - 如果微信 accessible tree 不暴露正文，探针只保留树快照和诊断日志，不切换到数据库或 OCR。

@@ -7,9 +7,32 @@
 
 set -Eeuo pipefail
 
+# Git Bash / MSYS2（Windows）在调用原生 docker.exe 前，会把以 "/" 开头的
+# 参数（如 /app/wechat-cli）自动改写成 Windows 路径（如 D:/soft/Git/app/
+# wechat-cli），再原样传入容器导致 exec 失败。这里关闭自动路径转换；
+# 在原生 Linux 上这两个变量无人读取，无副作用。
+#
+# 关闭转换后需要自己区分两类路径：
+#   - 容器内路径（/app/...）必须保持 POSIX 原样，不可转换；
+#   - 宿主机文件路径（docker-compose.yml）必须显式转成 Windows 路径
+#     （见 hostpath / compose），否则 Windows 版 docker 会把 "/d/..." 误读为
+#     当前盘根目录下的 "d\..."。
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 SERVICE="wechat-runtime"
+
+# 仅在 Git Bash/MSYS2 下把宿主 POSIX 路径转成 Windows 路径（供 docker.exe
+# 打开宿主文件）；原生 Linux 下 cygpath 不存在，原样返回。
+hostpath() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
 
 usage() {
   cat <<'EOF'
@@ -30,12 +53,18 @@ EOF
 }
 
 compose() {
-  local compose_file="${COMPOSE_FILE:-${PROJECT_DIR}/docker-compose.yml}"
+  local compose_file
+  compose_file="$(hostpath "${COMPOSE_FILE:-${PROJECT_DIR}/docker-compose.yml}")"
   docker compose -f "${compose_file}" "$@"
 }
 
 runtime_exec() {
-  compose exec -T "${SERVICE}" bash -lc '
+  # 把宿主机的机器人配置透传给容器（未设置则不附加 -e，容器内用默认值）
+  local extra_args=()
+  [[ -n "${WECHAT_ACCOUNT_ID:-}" ]] && extra_args+=(-e "WECHAT_ACCOUNT_ID=${WECHAT_ACCOUNT_ID}")
+  [[ -n "${WECHAT_BOT_NAME:-}" ]] && extra_args+=(-e "WECHAT_BOT_NAME=${WECHAT_BOT_NAME}")
+  [[ -n "${WECHAT_CHAT_TYPE:-}" ]] && extra_args+=(-e "WECHAT_CHAT_TYPE=${WECHAT_CHAT_TYPE}")
+  compose exec -T "${extra_args[@]}" "${SERVICE}" bash -lc '
     exec runuser -u wechat -- env \
       DISPLAY=:99 \
       HOME=/data/wechat \
@@ -43,6 +72,9 @@ runtime_exec() {
       AT_SPI_BUS_ADDRESS=unix:path=/home/wechat/.cache/at-spi/bus_99 \
       QT_ACCESSIBILITY=1 \
       QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 \
+      WECHAT_ACCOUNT_ID="$WECHAT_ACCOUNT_ID" \
+      WECHAT_BOT_NAME="$WECHAT_BOT_NAME" \
+      WECHAT_CHAT_TYPE="$WECHAT_CHAT_TYPE" \
       "$@"
   ' -- "$@"
 }
