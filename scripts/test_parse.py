@@ -374,6 +374,130 @@ class TestIncremental(unittest.TestCase):
         self.assertEqual(events[0]["text"], "12344567")
         self.assertEqual(events[0]["is_mention"], False)
 
+    def test_mentioned_aggregate_does_not_replay_old_mention_after_window_shift(self):
+        """时间头被尾部窗口截掉时，持续的聚合 @ 提示不得重放旧消息。"""
+        seen: set = set()
+        first = [
+            {
+                "path": [0],
+                "role": "list",
+                "name": "Chats",
+                "text": "",
+                "child_count": 1,
+            },
+            {
+                "path": [0, 0],
+                "role": "list item",
+                "name": "测试群 1 unread message(s) [You were mentioned] 半夏: @小半夏 07:00",
+                "text": "",
+                "child_count": 0,
+            },
+            {
+                "path": [0, 1],
+                "role": "text",
+                "name": "测试群",
+                "text": "",
+                "child_count": 0,
+            },
+            {
+                "path": [1],
+                "role": "list",
+                "name": "Messages",
+                "text": "",
+                "child_count": 3,
+            },
+            {
+                "path": [1, 1],
+                "role": "list item",
+                "name": "07:00",
+                "text": "",
+                "child_count": 0,
+            },
+            {
+                "path": [1, 2],
+                "role": "list item",
+                "name": "@小半夏 你好",
+                "text": "",
+                "child_count": 0,
+            },
+        ]
+        events, _ = P.extract_group_events(
+            first,
+            account_id="acc",
+            bot_name="小半夏",
+            chat_type_force="auto",
+            seen=seen,
+            first_scan=False,
+            emit_existing=True,
+        )
+        self.assertEqual([event["text"] for event in events], ["@小半夏 你好"])
+
+        second = [
+            {
+                "path": [0],
+                "role": "list",
+                "name": "Chats",
+                "text": "",
+                "child_count": 1,
+            },
+            {
+                "path": [0, 0],
+                "role": "list item",
+                "name": "测试群 2 unread message(s) [You were mentioned] 半夏: 普通消息 07:01",
+                "text": "",
+                "child_count": 0,
+            },
+            {
+                "path": [0, 1],
+                "role": "text",
+                "name": "测试群",
+                "text": "",
+                "child_count": 0,
+            },
+            {
+                "path": [1],
+                "role": "list",
+                "name": "Messages",
+                "text": "",
+                "child_count": 12,
+            },
+            # 时间头在消息窗口外；旧消息路径仍保持不变，但 time_block 变为空。
+            {
+                "path": [1, 2],
+                "role": "list item",
+                "name": "@小半夏 你好",
+                "text": "",
+                "child_count": 0,
+            },
+            {
+                "path": [1, 10],
+                "role": "list item",
+                "name": "机器人的回复",
+                "text": "",
+                "child_count": 0,
+            },
+            {
+                "path": [1, 11],
+                "role": "list item",
+                "name": "普通消息",
+                "text": "",
+                "child_count": 0,
+            },
+        ]
+        events, _ = P.extract_group_events(
+            second,
+            account_id="acc",
+            bot_name="小半夏",
+            chat_type_force="auto",
+            seen=seen,
+            first_scan=False,
+            emit_existing=True,
+        )
+        self.assertEqual(
+            [event["text"] for event in events], ["机器人的回复", "普通消息"]
+        )
+        self.assertTrue(all(not event["is_mention"] for event in events))
+
 
 class TestGroupDetectionFallbacks(unittest.TestCase):
     def test_no_chats_root_but_mention_row(self):

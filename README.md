@@ -136,7 +136,7 @@ printf '%s' '群里提醒' | ./scripts/wechat.sh send
    - `sender_name` = 仅当该行是**最新一条**且正文与 chats 预览一致时取预览发送者，否则为空（AT-SPI 内容行不暴露更早消息的发送者）；
    - `message_time` = 区段时间；最新匹配行取 chats 行的权威时间（区段头可能滞后）；
    - `chat_id` = `derived-chat-<sha256(account|chat)>`，`message_id` = `derived-time-<sha256(chat|sender|text|time)>`——身份字段由 Python 探针在输出边界一次生成，Go 只做解码、映射和去重。
-5. 增量去重：seen 键 = `(chat_name, text, time_block)`；首扫只记基线，`--emit-existing` 才回放既有行。
+5. 增量去重：优先使用 `(chat_name, message_row_path, text, message_type)`；只有节点没有稳定路径时才退回 `(chat_name, text, time_block)`。这样 Messages 尾部窗口截掉时间区段头后，旧 @消息不会因为 `time_block` 变化而被重放。首扫只记基线，`--emit-existing` 才回放既有行。
 
 依赖环境变量：
 

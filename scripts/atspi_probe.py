@@ -782,8 +782,8 @@ def watch(
     wakeup = EventWakeup(diagnostics)
     # 事件唤醒与轮询共享同一份 seen 状态，确保两条路径不会重复输出。
     wakeup.register()
-    # 跨轮状态：(chat_name, text, time_block)，用于增量输出与防抖。
-    seen: set[tuple[str, str, str]] = set()
+    # 跨轮状态优先使用 Messages 行路径，避免尾部窗口截掉时间头后重放旧消息。
+    seen: set[tuple[str, tuple[int, ...], str, str]] = set()
     first_scan = True
     running = True
     last_state: tuple[Any, ...] = ()

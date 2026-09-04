@@ -629,20 +629,36 @@ def build_message_event(
     }
 
 
+def message_seen_key(
+    chat_name: str, parsed: ParsedMessage
+) -> tuple[str, tuple[int, ...], str, str]:
+    """返回跨轮扫描使用的稳定消息键。
+
+    Messages 尾部窗口可能把消息所属的时间区段头截掉，导致同一行在
+    不同轮次的 ``time_block`` 不一致。只要 AT-SPI 行路径仍可用，就以
+    ``chat_name + path + text + message_type`` 识别消息；没有路径的离线
+    或降级节点才退回时间区段键。
+    """
+    if parsed.path:
+        return (chat_name, parsed.path, parsed.text, parsed.message_type)
+    return (chat_name, (), parsed.text, parsed.time_block)
+
+
 def extract_group_events(
     nodes: Sequence[dict[str, Any]],
     *,
     account_id: str,
     bot_name: str,
     chat_type_force: str,
-    seen: set[tuple[str, str, str]],
+    seen: set[tuple[str, tuple[int, ...], str, str]],
     first_scan: bool,
     emit_existing: bool,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """主流程：定位群聊并产出 message 事件（纯函数，供 watch 调用与单测）。
 
-    返回 (events, report)。report 含诊断信息；seen 为跨轮状态
-    （键 = (chat_name, text, time_block)）。
+    返回 (events, report)。report 含诊断信息；seen 为跨轮状态。
+    有稳定行路径时键为 ``(chat_name, path, text, message_type)``，否则
+    退回 ``(chat_name, (), text, time_block)``。
     """
     events: list[dict[str, Any]] = []
     report: dict[str, Any] = {"group_open": False, "reason": ""}
@@ -762,8 +778,8 @@ def extract_group_events(
 
     # 3) 增量输出
     for index, parsed in enumerate(messages):
-        # 组合会话、正文和区段时间，允许同文案在不同时间各自产生事件。
-        key = (chat.chat_name, parsed.text, parsed.time_block)
+        # 优先按稳定行路径去重，避免尾部窗口截掉时间头后旧消息被重放。
+        key = message_seen_key(chat.chat_name, parsed)
         is_new = key not in seen
         seen.add(key)
         if not is_new:
