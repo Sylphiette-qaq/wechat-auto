@@ -10,7 +10,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"wechat-auto/internal/probe"
@@ -29,19 +31,20 @@ func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 // main 解析命令行参数，并启动探针进程处理函数。
 func main() {
 	// mode 决定是原样转发探针输出，还是解析成统一事件后输出。
-	mode := flag.String("mode", "observe", "运行模式：probe、observe 或 send")
+	mode := flag.String("mode", "observe", "运行模式：probe、observe、send 或 http")
 	// probeCommand 默认使用 python3，也允许调用方替换为其他可执行文件。
 	probeCommand := flag.String("probe", "python3", "AT-SPI 探针可执行文件")
 	sendKey := flag.String("send-key", getenvOr("SEND_KEY", "enter"), "发送快捷键：仅支持 enter")
 	sendTimeout := flag.String("send-timeout", getenvOr("SEND_TIMEOUT", "10s"), "发送超时时间，传递给探针")
+	httpAddr := flag.String("http-addr", getenvOr("HTTP_ADDR", "0.0.0.0:8090"), "HTTP 服务监听地址")
 	var probeArgs stringList
 	// 同一个参数可以重复出现，以便完整传递 Python 探针的参数序列。
 	flag.Var(&probeArgs, "probe-arg", "传递给探针的参数，可重复指定")
 	flag.Parse()
 
 	// 入口处立即拒绝未知模式，避免进入含糊的处理分支。
-	if *mode != "probe" && *mode != "observe" && *mode != "send" {
-		fatalf("无效 --mode %q，必须是 probe、observe 或 send", *mode)
+	if *mode != "probe" && *mode != "observe" && *mode != "send" && *mode != "http" {
+		fatalf("无效 --mode %q，必须是 probe、observe、send 或 http", *mode)
 	}
 	// 未被 flag 消费的位置参数也作为探针参数，保持命令行调用的兼容性。
 	if flag.NArg() > 0 {
@@ -72,6 +75,20 @@ func main() {
 		}
 		probeArgs = append(probeArgs, "send", "--send-key", *sendKey, "--send-timeout", *sendTimeout)
 		stdin = bytes.NewReader(payload)
+	}
+	if *mode == "http" {
+		if *sendKey != "enter" {
+			fatalf("无效 --send-key %q，当前仅支持 enter", *sendKey)
+		}
+		if parsedTimeout, err := time.ParseDuration(*sendTimeout); err != nil || parsedTimeout <= 0 {
+			fatalf("无效 --send-timeout %q，必须是正时长（如 10s）", *sendTimeout)
+		}
+		httpCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := runHTTP(httpCtx, *httpAddr, *probeCommand, probeArgs, *sendKey, *sendTimeout, os.Stderr); err != nil {
+			fatalf("%v", err)
+		}
+		return
 	}
 	// 统一由 run 管理子进程生命周期和输出流；失败时以退出码 2 结束。
 	if err := run(context.Background(), *mode, *probeCommand, probeArgs, stdin, os.Stdout, os.Stderr); err != nil {

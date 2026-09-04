@@ -24,13 +24,41 @@ docker compose up -d
 默认容器启动命令为：
 
 ```text
-wechat-cli --mode observe \
+wechat-cli --mode http \
+  --http-addr 0.0.0.0:8090 \
   --probe python3 \
-  --probe-arg /app/scripts/atspi_probe.py \
-  --probe-arg watch \
-  --probe-arg --poll-interval \
-  --probe-arg 1
+  --probe-arg /app/scripts/atspi_probe.py
 ```
+
+HTTP 服务只通过宿主机回环地址暴露：`http://127.0.0.1:8090`，供本机 Amadeus 调用。容器内 HTTP 服务会持续观测当前打开会话；原有 `tree`、`watch`、`send` 快捷命令仍可单独执行。
+
+## 本机 HTTP 接口
+
+### 发送消息
+
+`POST http://127.0.0.1:8090/v1/messages/send`
+
+请求头必须包含 `Content-Type: application/json`，请求体只接受 `text` 字段：
+
+```bash
+curl -X POST http://127.0.0.1:8090/v1/messages/send \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"群里提醒"}'
+```
+
+消息发送到微信当前已打开的会话，不搜索或切换聊天。成功返回 `200` 和 `send_result` JSON；请求非法返回 `400`，微信/探针未就绪返回 `503`，发送超时返回 `504`，探针执行失败返回 `502`。
+
+### 接收消息（SSE）
+
+`GET http://127.0.0.1:8090/v1/messages/receive`
+
+接口使用 Server-Sent Events 长连接，只推送连接建立后的新消息，不回放历史消息：
+
+```bash
+curl -N http://127.0.0.1:8090/v1/messages/receive
+```
+
+每条消息以 `event: message` 发送，`data` 为统一事件 JSON（字段包括 `account_id`、`chat_id`、`chat_name`、`chat_type`、`sender_id`、`sender_name`、`message_id`、`text`、`message_type`、`is_mention`、`created_at`、`raw`）。连接空闲时服务端发送 SSE 心跳注释；客户端断开后不会补发断线期间的消息。
 
 ## 手工探针
 
@@ -92,7 +120,7 @@ stdin 的全部内容作为一条消息原样发送（包括换行）；空输�
 printf '%s' '群里提醒' | ./scripts/wechat.sh send
 ```
 
-发送成功或失败都会在 stdout 输出一条 `send_result` JSON；失败返回非零退出码并把诊断写入 stderr。发送过程在容器内串行化，不会自动重试。
+发送成功或失败都会在 stdout 输出一条 `send_result` JSON；失败返回非零退出码并把诊断写入 stderr。发送过程在容器内串行化，不会自动重试。HTTP 发送接口复用同一条 UI 发送链路。
 
 ## 群聊消息读取（watch）
 
@@ -113,7 +141,7 @@ printf '%s' '群里提醒' | ./scripts/wechat.sh send
 
 | 变量 | 说明 | 默认 |
 |---|---|---|
-| `WECHAT_BOT_NAME` | 机器人显示昵称，用于识别 `@昵称` 提及消息 | 空（未配置则无逐行 @判定，仅诊断提示） |
+| `WECHAT_BOT_NAME` | 机器人显示昵称，用于识别 `@昵称` 提及消息 | `小半夏` |
 | `WECHAT_CHAT_TYPE` | `auto`（自动判定，默认）/ `direct` / `group`（强制） | `auto` |
 | `WECHAT_ACCOUNT_ID` | 事件 `account_id` | `default` |
 
@@ -128,7 +156,7 @@ docker compose exec -e WECHAT_BOT_NAME=小半夏 wechat-runtime \
 ## 当前限制
 
 - 仅支持 `linux/amd64`、微信 4.1.1.8、**当前打开且为群聊**的会话；私聊/未打开的群聊不产事件（会打 `scan_state` 诊断）。
-- 发送命令尚未实现。
+- HTTP 服务与真实 Docker 图形环境仍需在微信登录后验收；接口仅面向本机 `127.0.0.1`。
 - 本机 macOS 无法直接验证真实 AT-SPI；必须在 Docker Linux 图形环境中登录后验收。
 - 轮询间隙内出现又消失的消息可能漏报；同一区段时间（HH:MM）内同文本重复会合并为一条（微信未暴露秒级/原生 ID）。
 - 更早（非最新）消息的发送者不可得；提及消息滚出可见区时正文读不到（只保留诊断与 chats 上下文）。

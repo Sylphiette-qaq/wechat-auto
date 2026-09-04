@@ -42,6 +42,7 @@ usage() {
   ./scripts/wechat.sh tree       输出当前微信 AT-SPI 控件树
   ./scripts/wechat.sh watch      持续输出文本/图片消息事件
   ./scripts/wechat.sh send       从 stdin 向当前会话发送一条文本
+  本机 HTTP API               http://127.0.0.1:8090（容器默认启动）
   ./scripts/wechat.sh logs       查看 Runtime 日志
   ./scripts/wechat.sh status     查看容器状态
   ./scripts/wechat.sh shell      进入 Runtime 容器

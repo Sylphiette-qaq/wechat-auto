@@ -25,4 +25,4 @@
 - [x] 4.2 发送 `@小半夏 你好666` → 事件 `is_mention=true`、正文正确、`message_time` 正确
 - [x] 4.3 最新 `@小半夏 你还是不招吗` → `sender_name=老冯`（预览绑定）、`message_time=16:52`（chats 权威时间，区段头滞后时仍绑定）
 - [x] 4.4 打开私聊 → 无事件，`reason=open_chat_not_group`
-- [ ] 4.5 重启容器（compose 环境变量注入）后验证 `WECHAT_BOT_NAME` 透传（待 Docker 环境重启）
+- [x] 4.5 重启容器（compose 环境变量注入）后验证 `WECHAT_BOT_NAME` 透传

@@ -73,14 +73,12 @@ runuser -u wechat -- env DISPLAY="${DISPLAY}" HOME="${HOME}" XDG_CONFIG_HOME="${
 WECHAT_PID=$!
 
 if [[ -x /app/wechat-cli ]]; then
-  # 未显式传参时，默认进入持续观测模式。
+  # 未显式传参时，默认启动本机 HTTP 服务；HTTP 模式内部负责持续观测。
   if [[ "$#" -eq 0 ]]; then
-    set -- --mode observe \
+    set -- --mode http \
+      --http-addr 0.0.0.0:8090 \
       --probe python3 \
-      --probe-arg /app/scripts/atspi_probe.py \
-      --probe-arg watch \
-      --probe-arg --poll-interval \
-      --probe-arg 1
+      --probe-arg /app/scripts/atspi_probe.py
   fi
   exec runuser -u wechat -- env DISPLAY="${DISPLAY}" HOME="${HOME}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME}" DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS}" AT_SPI_BUS_ADDRESS="${AT_SPI_BUS_ADDRESS}" QT_ACCESSIBILITY="${QT_ACCESSIBILITY}" QT_LINUX_ACCESSIBILITY_ALWAYS_ON="${QT_LINUX_ACCESSIBILITY_ALWAYS_ON}" /app/wechat-cli "$@"
 fi

@@ -23,7 +23,7 @@
 ## 3. 目录结构
 
 ```
-cmd/wechat-cli/main.go        Go CLI 入口：解析参数、拉起探针、转发/归一化/去重
+cmd/wechat-cli/main.go        Go CLI 入口：解析参数、拉起探针、转发/归一化/去重、HTTP 服务
 internal/probe/jsonl.go       解析探针输出的 JSONL Record，转换为统一 Event
 internal/wechatmodel/         Event/ChatType/MessageType 数据模型 + 派生 ID + 去重
 scripts/atspi_probe.py        Python AT-SPI 探针：dump 控件树 / watch 消息
@@ -47,6 +47,7 @@ openspec/                     变更提案、设计、任务与规格（能力�
               cmd/wechat-cli（--mode probe|observe）
                               │  probe: 原样转发
                               │  observe: ParseRecord → Event → 去重 → JSONL
+                              │  http: 后台观测 + 本机 HTTP 发送/SSE 接收
                               ▼
                          stdout: 统一事件 JSONL
 ```
@@ -55,9 +56,10 @@ openspec/                     变更提案、设计、任务与规格（能力�
 
 - **CLI 与探针通过 JSON Lines 连接**：CLI 只负责进程生命周期 + 事件流读取 + 归一化 + 去重；AT-SPI 的具体访问在 Python 探针内完成。业务层只依赖 JSON，不依赖 AT-SPI API。
 - **事件优先、轮询兜底**：探针订阅 `children-changed` / `text-changed` / `focus` 等事件，同时以低频轮询（默认 1s）扫描控件树，两条路径共用内容哈希去重。
-- **两种模式**：
+- **四种模式**：
   - `--mode probe`：直接把探针 stdout 转发（配合探针 `dump` 导出控件树）。
   - `--mode observe`：消费探针已生成的完整消息事件，经 `ParseRecord` → `Event()`（仅解码与字段映射）→ `Deduper` 去重后输出。
+  - `--mode http`：在后台观测消息并启动 `net/http` 服务；默认监听 `0.0.0.0:8090`，提供 `/v1/messages/send` 与 `/v1/messages/receive`。
 
 ### 统一事件字段（`internal/wechatmodel/event.go`）
 
@@ -103,7 +105,7 @@ docker compose up -d
 ./scripts/wechat.sh help      # 帮助
 ```
 
-环境变量：`POLL_INTERVAL`（watch 轮询秒数，默认 1）、`MAX_DEPTH`（控件树深度，默认 60）、`COMPOSE_FILE`。
+HTTP 服务地址：`http://127.0.0.1:8090`（仅本机）；环境变量：`POLL_INTERVAL`（watch 轮询秒数，默认 1）、`MAX_DEPTH`（控件树深度，默认 60）、`COMPOSE_FILE`。
 
 ### 底层完整命令（仅排查环境问题时用）
 
@@ -118,7 +120,7 @@ docker compose exec wechat-runtime \
 
 ## 6. 开发约定
 
-- **CLI 参数**：`--probe-arg` 可重复指定，传递给探针；`--mode` 支持 `probe|observe|send`，非法值以退出码 2 报错。
+- **CLI 参数**：`--probe-arg` 可重复指定，传递给探针；`--mode` 支持 `probe|observe|send|http`，HTTP 模式通过 `--http-addr` 指定监听地址，非法值以退出码 2 报错。
 - **探针输出契约**：stdout 只输出业务 JSONL；诊断日志一律写 stderr（`Diagnostics` 类，按错误类型去重抑制重复告警）。Go 侧 `scanner.Buffer` 上限设为 4MB 以容纳长文本节点。
 - **JSON 标签**：统一事件字段使用 snake_case；可选字段加 `omitempty`。
 - **错误处理**：探针侧所有 AT-SPI 远程调用都用 `safe_*` 包装并捕获异常（远程对象可能过期）；CLI 侧用 `fmt.Errorf` 包装错误并保留退出码。
@@ -134,5 +136,5 @@ docker compose exec wechat-runtime \
 
 ## 8. 当前状态（来自 `openspec/.../tasks.md`）
 
-已完成：Docker 环境、Go CLI、探针、事件模型与去重、群聊/@消息读取、UI 发送链路代码、单测与构建校验。
+已完成：Docker 环境、Go CLI、探针、事件模型与去重、群聊/@消息读取、UI 发送链路代码、本机 HTTP 发送/SSE 接收接口、单测与构建校验。
 待验证（需真实 Docker 图形环境）：noVNC 首次登录、重启后登录态保留、私聊/群聊文本读取、xclip/xdotool 粘贴发送及发送后回显。

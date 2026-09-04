@@ -18,12 +18,15 @@ services:
       VNC_PORT: "5900"
       # 群聊读取：机器人昵称（@昵称 提及判定）与会话类型（auto/direct/group）
       WECHAT_ACCOUNT_ID: "${WECHAT_ACCOUNT_ID:-default}"
-      WECHAT_BOT_NAME: "${WECHAT_BOT_NAME:-}"
+      # 默认机器人昵称与 Amadeus 系统提示保持一致，也可由宿主机覆盖。
+      WECHAT_BOT_NAME: "${WECHAT_BOT_NAME:-小半夏}"
       WECHAT_CHAT_TYPE: "${WECHAT_CHAT_TYPE:-auto}"
       SEND_KEY: "${SEND_KEY:-enter}"
       SEND_TIMEOUT: "${SEND_TIMEOUT:-10s}"
     ports:
       - "127.0.0.1:6080:6080"
+      # HTTP 接口仅绑定宿主机回环地址，供本机 Amadeus 使用。
+      - "127.0.0.1:8090:8090"
     volumes:
       # 将登录态、配置、日志和诊断快照持久化到 Docker volume。
       - wechat-state:/data/wechat
