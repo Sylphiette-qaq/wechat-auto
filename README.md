@@ -15,6 +15,7 @@ artifacts/WeChatLinux_4.1.1.8_x86_64.deb
 ## 启动
 
 ```bash
+# 项目已提供本机默认配置：WECHAT_BOT_NAME=小半夏
 docker compose build
 docker compose up -d
 ```
@@ -141,7 +142,7 @@ printf '%s' '群里提醒' | ./scripts/wechat.sh send
 
 | 变量 | 说明 | 默认 |
 |---|---|---|
-| `WECHAT_BOT_NAME` | 机器人显示昵称，用于识别 `@昵称` 提及消息 | `小半夏` |
+| `WECHAT_BOT_NAME` | 机器人显示昵称，用于识别 `@昵称` 提及消息 | `.env` 中的 `小半夏` |
 | `WECHAT_CHAT_TYPE` | `auto`（自动判定，默认）/ `direct` / `group`（强制） | `auto` |
 | `WECHAT_ACCOUNT_ID` | 事件 `account_id` | `default` |
 

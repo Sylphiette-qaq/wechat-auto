@@ -18,8 +18,8 @@ services:
       VNC_PORT: "5900"
       # 群聊读取：机器人昵称（@昵称 提及判定）与会话类型（auto/direct/group）
       WECHAT_ACCOUNT_ID: "${WECHAT_ACCOUNT_ID:-default}"
-      # 默认机器人昵称与 Amadeus 系统提示保持一致，也可由宿主机覆盖。
-      WECHAT_BOT_NAME: "${WECHAT_BOT_NAME:-小半夏}"
+      # 机器人昵称从项目环境变量读取，可由宿主机环境覆盖。
+      WECHAT_BOT_NAME: "${WECHAT_BOT_NAME}"
       WECHAT_CHAT_TYPE: "${WECHAT_CHAT_TYPE:-auto}"
       SEND_KEY: "${SEND_KEY:-enter}"
       SEND_TIMEOUT: "${SEND_TIMEOUT:-10s}"
