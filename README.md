@@ -43,6 +43,9 @@ wechat-cli --mode observe \
 # 持续查看经过 Go 标准化和去重后的消息事件
 ./scripts/wechat.sh watch
 
+# 从 stdin 向当前已打开会话发送一条文本消息
+printf '%s' '自动回复内容' | ./scripts/wechat.sh send
+
 # 查看 Runtime 日志
 ./scripts/wechat.sh logs
 
@@ -79,6 +82,18 @@ docker compose exec wechat-runtime \
 
 消息观测输出为 JSON Lines，诊断日志写入容器日志目录和标准错误。
 
+## 自动发送消息
+
+`send` 只操作用户已经在 noVNC 中打开的当前会话，不搜索或切换聊天。发送流程会激活唯一微信窗口，通过 AT-SPI 唯一定位并锁定消息输入框，使用 `xclip` 写入剪贴板，再由 `xdotool` 模拟 `Ctrl+V` 和发送快捷键。
+
+stdin 的全部内容作为一条消息原样发送（包括换行）；空输入和纯空白输入会被拒绝。发送键固定为已验证可行的 `Enter`：
+
+```bash
+printf '%s' '群里提醒' | ./scripts/wechat.sh send
+```
+
+发送成功或失败都会在 stdout 输出一条 `send_result` JSON；失败返回非零退出码并把诊断写入 stderr。发送过程在容器内串行化，不会自动重试。
+
 ## 群聊消息读取（watch）
 
 `watch` 每次轮询执行：
@@ -91,7 +106,7 @@ docker compose exec wechat-runtime \
    - `is_mention` = 群聊且正文含 `@<WECHAT_BOT_NAME>`（后随空白/U+2005/标点或结尾）；
    - `sender_name` = 仅当该行是**最新一条**且正文与 chats 预览一致时取预览发送者，否则为空（AT-SPI 内容行不暴露更早消息的发送者）；
    - `message_time` = 区段时间；最新匹配行取 chats 行的权威时间（区段头可能滞后）；
-   - `message_id` = `derived-time-<sha256(chat|sender|text|time)>`——同文本不同时间可区分，Go 去重不会吞掉第二条。
+   - `chat_id` = `derived-chat-<sha256(account|chat)>`，`message_id` = `derived-time-<sha256(chat|sender|text|time)>`——身份字段由 Python 探针在输出边界一次生成，Go 只做解码、映射和去重。
 5. 增量去重：seen 键 = `(chat_name, text, time_block)`；首扫只记基线，`--emit-existing` 才回放既有行。
 
 依赖环境变量：

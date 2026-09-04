@@ -1,13 +1,17 @@
 services:
+  # 单容器运行微信、图形服务、AT-SPI 探针和 Go CLI。
   wechat-runtime:
     platform: linux/amd64
     build:
+      # 使用项目根目录作为构建上下文，以便读取 artifacts 和源码。
       context: .
       dockerfile: docker/Dockerfile
       args:
+        # 构建阶段再次校验微信安装包的固定版本和摘要。
         WECHAT_VERSION: "4.1.1.8"
         WECHAT_SHA256: "c9765e87ee5133bf4bb50d585c1814fafd995e3fb0da62c5ed07259b43dada7b"
     environment:
+      # 图形、VNC 和业务识别参数通过环境变量传入容器。
       DISPLAY: ":99"
       SCREEN_SIZE: "1920x1080x24"
       NOVNC_PORT: "6080"
@@ -16,9 +20,12 @@ services:
       WECHAT_ACCOUNT_ID: "${WECHAT_ACCOUNT_ID:-default}"
       WECHAT_BOT_NAME: "${WECHAT_BOT_NAME:-}"
       WECHAT_CHAT_TYPE: "${WECHAT_CHAT_TYPE:-auto}"
+      SEND_KEY: "${SEND_KEY:-enter}"
+      SEND_TIMEOUT: "${SEND_TIMEOUT:-10s}"
     ports:
       - "127.0.0.1:6080:6080"
     volumes:
+      # 将登录态、配置、日志和诊断快照持久化到 Docker volume。
       - wechat-state:/data/wechat
       - wechat-config:/data/config
       - wechat-logs:/data/logs

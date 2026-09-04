@@ -171,6 +171,12 @@ def derive_message_id(chat_name: str, sender: str, text: str, time_block: str) -
     return "derived-time-" + hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+def derive_chat_id(account_id: str, chat_name: str) -> str:
+    """按账号和会话名派生稳定的会话 ID，供 Go 直接消费。"""
+    material = "\x00".join([account_id, chat_name])
+    return "derived-chat-" + hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
 # --------------------------------------------------------------------------
 # 数据结构
 # --------------------------------------------------------------------------
@@ -192,9 +198,11 @@ class ChatRowInfo:
 
     @property
     def has_content(self) -> bool:
+        """判断会话预览正文是否非空，用于区分空会话行。"""
         return bool(self.preview_text)
 
     def as_dict(self) -> dict[str, Any]:
+        """将会话行信息转换为诊断报告可序列化的字典。"""
         return {
             "raw_name": self.raw_name,
             "chat_name": self.chat_name,
@@ -219,6 +227,7 @@ class ParsedMessage:
     raw_name: str = ""
 
     def as_dict(self) -> dict[str, Any]:
+        """将解析后的消息转换为报告字典，不包含内部路径细节。"""
         return {
             "text": self.text,
             "time_block": self.time_block,
@@ -239,6 +248,7 @@ class OpenChatContext:
     chats_root_path: tuple[int, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
+        """将当前打开会话上下文转换为诊断报告字典。"""
         return {
             "row": self.row.as_dict() if self.row else None,
             "title": self.title,
@@ -309,6 +319,7 @@ def node_content(node: dict[str, Any]) -> str:
 
 
 def _remove_case_insensitive(rest: str, markers: Sequence[str]) -> str:
+    """忽略大小写移除 UI 聚合标记，保留其余会话文本。"""
     for marker in markers:
         rest = re.sub(re.escape(marker), "", rest, flags=re.IGNORECASE)
     return rest
@@ -324,6 +335,7 @@ def _collapse_spaces(value: str) -> str:
 
 
 def _strip_unread(rest: str) -> tuple[str, Optional[int]]:
+    """识别并移除未读数量 token，同时返回解析出的数量。"""
     for pat in UNREAD_PATTERNS:
         m = pat.search(rest)
         if m:
@@ -420,8 +432,10 @@ def parse_chat_rows(
     chats_root_path: Sequence[int],
     force_type: str = "auto",
 ) -> list[ChatRowInfo]:
+    """遍历 Chats 容器的直接子项，并解析出有效会话行。"""
     rows: list[ChatRowInfo] = []
     for item in direct_children(nodes, chats_root_path):
+        # accessible name 是会话行中最完整的组合文本来源。
         raw = item.get("name") or ""
         info = parse_chat_row(raw, force_type=force_type)
         if info.chat_name:
@@ -485,6 +499,7 @@ def split_message_rows(
     results: list[ParsedMessage] = []
     current_time = ""
     for item in direct_children(nodes, messages_root.get("path") or ()):
+        # 同时读取 name/text，兼容不同 Qt 控件对正文属性的暴露差异。
         raw_name = item.get("name") or ""
         content = clean_text(raw_name) or clean_text(item.get("text") or "")
         role = normalized(item.get("role") or "")
@@ -493,13 +508,16 @@ def split_message_rows(
         if not content:
             continue
         if any(pat.fullmatch(content) for pat in TIME_ROW_PATTERNS):
+            # 时间行只更新后续消息的区段时间，不单独产生事件。
             current_time = content
             continue
         if role in ("list", "list item"):
             pass  # 正常消息行
         if norm in IGNORED_TEXT or norm in MESSAGE_NOISE:
+            # 导航、按钮和系统提示不是用户消息正文，直接过滤。
             continue
         if "image" in role or any(marker in norm for marker in IMAGE_MARKERS):
+            # 当前统一事件模型将图片、表情和贴纸归入 image 类型。
             message_type = "image"
         else:
             message_type = "text"
@@ -531,6 +549,7 @@ def match_open_chat(
     匹配不到返回 None（调用方降级，不阻塞 @昵称 逐行判定）。
     """
     if not chats:
+        # 没有侧边栏会话时无法进行上下文匹配。
         return None
     last_text = messages[-1].text if messages else ""
     last_time = messages[-1].time_block if messages else ""
@@ -538,6 +557,7 @@ def match_open_chat(
     best: Optional[ChatRowInfo] = None
     best_score = -1
     for chat in chats:
+        # 标题、最新正文和时间分别提供不同置信度的匹配线索。
         score = 0
         if title and chat.chat_name and chat.chat_name == title:
             score += 10
@@ -577,10 +597,14 @@ def build_message_event(
     row_path: tuple[int, ...],
 ) -> dict[str, Any]:
     """组装探针 message JSONL 记录（schema 与 Go Record 兼容）。"""
+    # 在探针输出边界一次性生成 Go 所需的完整身份字段。
+    chat_id = derive_chat_id(account_id, chat.chat_name)
     message_id = derive_message_id(chat.chat_name, sender, parsed.text, parsed.time_block)
+    # 字段保持与 Go Record 兼容，同时保留原始行供诊断定位。
     return {
         "kind": "message",
         "account_id": account_id,
+        "chat_id": chat_id,
         "chat_name": chat.chat_name,
         "chat_type": "group",
         "sender_name": sender,
@@ -623,6 +647,7 @@ def extract_group_events(
     events: list[dict[str, Any]] = []
     report: dict[str, Any] = {"group_open": False, "reason": ""}
 
+    # 先定位两个关键列表；后续所有解析都基于这两个容器的路径。
     chats_root = find_chats_root(nodes)
     messages_root = find_messages_root(nodes)
     report["chats_root_path"] = list(chats_root["path"]) if chats_root else []
@@ -635,6 +660,7 @@ def extract_group_events(
     )
     report["chat_rows"] = [c.as_dict() for c in chats]
 
+    # 没有 Messages 列表意味着当前界面尚未打开可读取的会话。
     if messages_root is None:
         report["reason"] = "no_messages_list"
         return events, report
@@ -652,7 +678,9 @@ def extract_group_events(
         chat = chats[0]
     ctx.row = chat
 
+    # 按优先级使用 chats 行、显式类型和正文提及来判断是否为群聊。
     def _with_group_hint(base: Optional[ChatRowInfo], name: str) -> ChatRowInfo:
+        """为缺失或非群聊提示的上下文复制一份 group 类型信息。"""
         if base is None:
             return ChatRowInfo(
                 chat_name=name or "(unknown)",
@@ -734,6 +762,7 @@ def extract_group_events(
 
     # 3) 增量输出
     for index, parsed in enumerate(messages):
+        # 组合会话、正文和区段时间，允许同文案在不同时间各自产生事件。
         key = (chat.chat_name, parsed.text, parsed.time_block)
         is_new = key not in seen
         seen.add(key)
@@ -742,6 +771,7 @@ def extract_group_events(
         if first_scan and not emit_existing:
             continue
         is_latest = index == binding_index
+        # 只有与 Chats 预览绑定的最新行能可靠提供发送者。
         sender = chat.sender if is_latest else ""
         is_mention = is_mention_of(parsed.text, bot_name)
         message_time = parsed.time_block

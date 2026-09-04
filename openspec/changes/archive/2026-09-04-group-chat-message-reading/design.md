@@ -30,7 +30,7 @@ Non-Goals:
 3. **sender 绑定按「最新一条 + 正文与预览一致」，不要求时间一致。**
    实测区段头时间滞后；绑定按行位置而非文本，避免同文本前一条被误绑。
 4. **事件身份由探针自算并含时间。**
-   保持 Go 零改动：`message_id = derived-time-<sha256(chat|sender|text|time)>`；时间缺失退化为不含时间。
+   `chat_id = derived-chat-<sha256(account|chat)>`，`message_id = derived-time-<sha256(chat|sender|text|time)>`；Go 只解码完整记录、映射字段并去重。
 5. **仅群聊；私聊行即使正文含 "@昵称" 也不兜底成群聊。**
    兜底分支只允许 chat hint 未知/无会话行时使用。
 6. **增量 seen = (chat_name, text, time_block)**，首扫记基线（`--emit-existing` 才回放）。

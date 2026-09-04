@@ -7,8 +7,8 @@
 这是 **Linux Docker 微信 AT-SPI 最小 CLI**（第一阶段验证工程）。目标不是完成机器人业务，而是验证：固定版本的 Linux 微信 4.1.1.8 能否在 Docker 图形环境中启动、登录，并通过 **AT-SPI 无障碍树**读取当前前台会话的文本/图片消息，最终以 **JSON Lines** 输出统一事件。
 
 - 固定微信版本：**4.1.1.8**（`linux/amd64`）
-- 只读观测，**尚未实现发送消息**
-- 严格技术边界：只允许 AT-SPI，禁止数据库 / 进程内存 / Hook / ptrace / 协议模拟 / OCR
+- 通过 AT-SPI 只读观测，并通过 X11 UI 自动化发送文本消息；不调用微信内部接口
+- 严格技术边界：只允许 AT-SPI/X11 UI，禁止数据库 / 进程内存 / Hook / ptrace / 协议模拟 / OCR
 
 ## 2. 技术栈
 
@@ -57,7 +57,7 @@ openspec/                     变更提案、设计、任务与规格（能力�
 - **事件优先、轮询兜底**：探针订阅 `children-changed` / `text-changed` / `focus` 等事件，同时以低频轮询（默认 1s）扫描控件树，两条路径共用内容哈希去重。
 - **两种模式**：
   - `--mode probe`：直接把探针 stdout 转发（配合探针 `dump` 导出控件树）。
-  - `--mode observe`：解析消息候选节点，经 `ParseRecord` → `Event()`（补齐派生 ChatID/MessageID）→ `Deduper` 去重后输出。
+  - `--mode observe`：消费探针已生成的完整消息事件，经 `ParseRecord` → `Event()`（仅解码与字段映射）→ `Deduper` 去重后输出。
 
 ### 统一事件字段（`internal/wechatmodel/event.go`）
 
@@ -65,8 +65,8 @@ openspec/                     变更提案、设计、任务与规格（能力�
 
 ### 派生 ID 规则（`internal/wechatmodel/dedup.go`）
 
-- 探针未提供原生 `MessageID` 时，用 `DeriveIdentity(account_id, chat_id, sender_name, text)` 做 SHA-256 生成 `derived-*` ID。
-- 未提供 `ChatID` 时，用 `DeriveChatID(account_id, chat_name)` 生成 `derived-chat-*`。
+- 探针未提供原生 `MessageID` 时，由 Python 探针用 `derive_message_id(chat_name, sender_name, text, time_block)` 做 SHA-256 生成 `derived-time-*` ID。
+- 未提供 `ChatID` 时，由 Python 探针用 `derive_chat_id(account_id, chat_name)` 生成 `derived-chat-*`；Go 只消费完整身份字段。
 - 去重键 = `account_id + chat_id + message_id`（进程内内存去重）。
 
 ## 5. 常用命令
@@ -118,7 +118,7 @@ docker compose exec wechat-runtime \
 
 ## 6. 开发约定
 
-- **CLI 参数**：`--probe-arg` 可重复指定，传递给探针；`--mode` 仅 `probe|observe`，非法值以退出码 2 报错。
+- **CLI 参数**：`--probe-arg` 可重复指定，传递给探针；`--mode` 支持 `probe|observe|send`，非法值以退出码 2 报错。
 - **探针输出契约**：stdout 只输出业务 JSONL；诊断日志一律写 stderr（`Diagnostics` 类，按错误类型去重抑制重复告警）。Go 侧 `scanner.Buffer` 上限设为 4MB 以容纳长文本节点。
 - **JSON 标签**：统一事件字段使用 snake_case；可选字段加 `omitempty`。
 - **错误处理**：探针侧所有 AT-SPI 远程调用都用 `safe_*` 包装并捕获异常（远程对象可能过期）；CLI 侧用 `fmt.Errorf` 包装错误并保留退出码。
@@ -129,10 +129,10 @@ docker compose exec wechat-runtime \
 
 1. **仅 AT-SPI 读消息**：不得读取微信数据库、数据库密钥、进程内存；不得使用 Hook、ptrace、协议模拟或 OCR。
 2. **固定版本**：微信 4.1.1.8 + `linux/amd64`，构建前校验架构、版本、SHA-256（值见 `docker-compose.yml` / `artifacts/README.md`）。安装包属外部输入，**不提交 Git**（`.gitignore` 已排除 `*.deb`）。
-3. **第一版范围**：只观测前台当前会话的普通文本/图片；不实现发送、后台最小化监听、LLM、多账号、复杂消息类型。
+3. **第一版范围**：观测前台当前会话的普通文本/图片，并支持向当前打开会话发送一条普通文本；不做后台最小化监听、LLM、多账号、复杂消息类型或会话搜索切换。
 4. **正文读不到时的行为**：只保留控件树快照与诊断日志作为阻塞证据，**不切换到数据库或 OCR**。
 
 ## 8. 当前状态（来自 `openspec/.../tasks.md`）
 
-已完成：Docker 环境、Go CLI、探针、事件模型与去重、单测与构建校验。
-待验证（需真实 Docker 图形环境）：noVNC 首次登录、重启后登录态保留、私聊/群聊文本正文能否被 CLI 输出、正文不可读时的阻塞判定。
+已完成：Docker 环境、Go CLI、探针、事件模型与去重、群聊/@消息读取、UI 发送链路代码、单测与构建校验。
+待验证（需真实 Docker 图形环境）：noVNC 首次登录、重启后登录态保留、私聊/群聊文本读取、xclip/xdotool 粘贴发送及发送后回显。

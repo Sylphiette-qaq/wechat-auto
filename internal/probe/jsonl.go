@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"wechat-auto/internal/wechatmodel"
 )
 
-// Record is the intentionally small JSON contract consumed from the Python
-// AT-SPI probe. Unknown fields are retained in Raw for diagnostics.
+// Record 是 Go 消费 Python AT-SPI 探针时使用的完整 JSON 契约。
+// 身份、类型和时间字段由探针在输出边界填充；未声明字段保留到 Raw。
 type Record struct {
 	AccountID   string                  `json:"account_id"`
 	ChatID      string                  `json:"chat_id"`
@@ -27,44 +26,38 @@ type Record struct {
 	Raw         map[string]any          `json:"-"`
 }
 
+// ParseRecord 只负责把一行探针 JSONL 解码为 Record。
+// 业务字段的完整性和身份派生由 Python 探针在输出边界保证。
 func ParseRecord(line []byte) (Record, error) {
+	// 去掉首尾空白后交给 JSON 解码器，空行会作为协议错误返回。
 	line = bytes.TrimSpace(line)
-	if len(line) == 0 {
-		return Record{}, fmt.Errorf("empty JSONL record")
-	}
 	var rec Record
 	if err := json.Unmarshal(line, &rec); err != nil {
 		return Record{}, fmt.Errorf("parse probe JSON: %w", err)
 	}
-	if rec.ChatType != wechatmodel.ChatTypeDirect && rec.ChatType != wechatmodel.ChatTypeGroup {
-		return Record{}, fmt.Errorf("invalid chat_type %q", rec.ChatType)
-	}
-	if strings.TrimSpace(rec.ChatName) == "" || strings.TrimSpace(rec.Text) == "" {
-		return Record{}, fmt.Errorf("chat_name and text are required")
-	}
-	if rec.CreatedAt.IsZero() {
-		rec.CreatedAt = time.Now().UTC()
-	}
+	// 再解码一份原始 map，只为保留诊断字段，不在 Go 层重新校验业务值。
 	var raw map[string]any
-	if err := json.Unmarshal(line, &raw); err == nil {
-		rec.Raw = raw
+	if err := json.Unmarshal(line, &raw); err != nil {
+		return Record{}, fmt.Errorf("parse probe raw JSON: %w", err)
 	}
+	rec.Raw = raw
 	return rec, nil
 }
 
+// Event 将已完整的 Record 做字段映射，不承担校验、补默认值或 ID 派生。
 func (r Record) Event() wechatmodel.Event {
-	if strings.TrimSpace(r.ChatID) == "" {
-		r.ChatID = wechatmodel.DeriveChatID(r.AccountID, r.ChatName)
+	return wechatmodel.Event{
+		AccountID:   r.AccountID,
+		ChatID:      r.ChatID,
+		ChatName:    r.ChatName,
+		ChatType:    r.ChatType,
+		SenderID:    r.SenderID,
+		SenderName:  r.SenderName,
+		MessageID:   r.MessageID,
+		Text:        r.Text,
+		MessageType: r.MessageType,
+		IsMention:   r.IsMention,
+		CreatedAt:   r.CreatedAt,
+		Raw:         r.Raw,
 	}
-	id := r.MessageID
-	identitySource := "native"
-	if strings.TrimSpace(id) == "" {
-		id = wechatmodel.DeriveIdentity(r.AccountID, r.ChatID, r.SenderName, r.Text)
-		identitySource = "derived"
-	}
-	if r.Raw == nil {
-		r.Raw = map[string]any{}
-	}
-	r.Raw["identity_source"] = identitySource
-	return wechatmodel.Event{AccountID: r.AccountID, ChatID: r.ChatID, ChatName: r.ChatName, ChatType: r.ChatType, SenderID: r.SenderID, SenderName: r.SenderName, MessageID: id, Text: r.Text, MessageType: r.MessageType, IsMention: r.IsMention, CreatedAt: r.CreatedAt, Raw: r.Raw}
 }

@@ -9,7 +9,7 @@
 
 - 新增纯解析模块 `scripts/atspi_parse.py`（不依赖 gi）：`Chats` 行解析、会话窗标题定位、`Messages` 内容行切分、`@昵称` 提及判定、事件与 `message_id` 组装。
 - `scripts/atspi_probe.py` `watch` 改为只读**当前打开且为群聊**的会话：chats 行提供上下文，Messages 内容行逐条输出事件，正文含 `@<WECHAT_BOT_NAME>` 即 `is_mention=true`；新增 `--bot-name`（env `WECHAT_BOT_NAME`）与 `--chat-type auto|direct|group`（默认 auto）。
-- 事件 `message_id` 由探针自算并含区段时间（`derived-time-*`），同文本不同时间可区分；Go 层零改动。
+- 事件 `chat_id`/`message_id` 由探针在输出边界生成并含区段时间（`derived-*`），同文本不同时间可区分；Go 层只做 JSONL 解码、字段映射和去重。
 - 新增离线 fixture 与 `scripts/test_parse.py` 单测（宿主机 `python scripts/test_parse.py` 可跑）。
 
 ## Capabilities
@@ -26,5 +26,5 @@
 
 - 新增 `scripts/atspi_parse.py`、`scripts/test_parse.py`、`scripts/testdata/*.jsonl`；修改 `scripts/atspi_probe.py`。
 - `README.md`、`docker-compose.yml`（`WECHAT_BOT_NAME`/`WECHAT_CHAT_TYPE`/`WECHAT_ACCOUNT_ID` 透传）、`scripts/wechat.sh`（透传环境变量）。
-- Go 代码零改动（探针自算 `message_id`，Go Deduper 键保持兼容且不再误并同文本不同时间的两条）。
+- Go 处理层保持纯粹（探针自算身份，Go Deduper 只消费已完整事件，避免误并同文本不同时间的两条）。
 - 仍只使用 AT-SPI 控件树，不引入数据库/内存读取/Hook/OCR。
