@@ -125,11 +125,11 @@ printf '%s' '群里提醒' | ./scripts/wechat.sh send
 
 ## 群聊消息读取（watch）
 
-`watch` 每次轮询执行：
+`watch` 每次轮询执行；为控制性能，Messages 只读取末尾固定窗口（默认 10 条），窗口外历史消息可能被忽略：
 
-1. 解析 `Chats` 列表全部行 → 会话上下文（`chat_name`、`chat_type`、`unread_count`、聚合 `mentioned`、最新一条 `sender`/预览正文/时间；群聊行含 `sender: 正文` 冒号段，私聊行没有）。
+1. 解析 `Chats` 列表全部直接行 → 会话上下文（`chat_name`、`chat_type`、`unread_count`、聚合 `mentioned`、最新一条 `sender`/预览正文/时间；群聊行含 `sender: 正文` 冒号段，私聊行没有）。
 2. 定位**当前打开的会话**：会话窗标题文本（Messages 列表之前的短文本，允许 editable）必须与某个 chats 行会话名一致，避免把错误提示等状态文案当标题。
-3. 仅当打开会话判定为**群聊**时继续：切分 `Messages` 内容行（时间行=可选区段头），逐条输出 message 事件。
+3. 仅当打开会话判定为**群聊**时继续：只读取 `Messages` 末尾 `MESSAGE_WINDOW` 条直接子项，再切分内容行。
 4. 每条事件：
    - `text` = 内容行正文（strip 首尾空白，保留正文内 U+2005），**不以 chats 预览顶替**——预览只指向最新一条，提及消息可能更早（此时 chats 行显示的是更新、非 @ 的消息）；
    - `is_mention` = 群聊且正文含 `@<WECHAT_BOT_NAME>`（后随空白/U+2005/标点或结尾）；
@@ -145,6 +145,7 @@ printf '%s' '群里提醒' | ./scripts/wechat.sh send
 | `WECHAT_BOT_NAME` | 机器人显示昵称，用于识别 `@昵称` 提及消息 | `.env` 中的 `小半夏` |
 | `WECHAT_CHAT_TYPE` | `auto`（自动判定，默认）/ `direct` / `group`（强制） | `auto` |
 | `WECHAT_ACCOUNT_ID` | 事件 `account_id` | `default` |
+| `MESSAGE_WINDOW` | `watch` 每轮读取的 Messages 尾部窗口大小 | `10` |
 
 探针同样接受 `--bot-name` / `--chat-type` 显式参数。容器内运行示例：
 

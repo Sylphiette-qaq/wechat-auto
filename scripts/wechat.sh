@@ -54,6 +54,7 @@ usage() {
   MAX_DEPTH=60          控件树最大遍历深度
   SEND_KEY=enter        发送快捷键：仅支持 enter
   SEND_TIMEOUT=10s      发送超时时间
+  MESSAGE_WINDOW=10     watch 每轮只扫描 Messages 末尾消息条数
   COMPOSE_FILE=...      覆盖 docker compose 文件
 EOF
 }
@@ -72,6 +73,7 @@ runtime_exec() {
   [[ -n "${WECHAT_ACCOUNT_ID:-}" ]] && extra_args+=(-e "WECHAT_ACCOUNT_ID=${WECHAT_ACCOUNT_ID}")
   [[ -n "${WECHAT_BOT_NAME:-}" ]] && extra_args+=(-e "WECHAT_BOT_NAME=${WECHAT_BOT_NAME}")
   [[ -n "${WECHAT_CHAT_TYPE:-}" ]] && extra_args+=(-e "WECHAT_CHAT_TYPE=${WECHAT_CHAT_TYPE}")
+  [[ -n "${MESSAGE_WINDOW:-}" ]] && extra_args+=(-e "MESSAGE_WINDOW=${MESSAGE_WINDOW}")
   [[ -n "${SEND_KEY:-}" ]] && extra_args+=(-e "SEND_KEY=${SEND_KEY}")
   [[ -n "${SEND_TIMEOUT:-}" ]] && extra_args+=(-e "SEND_TIMEOUT=${SEND_TIMEOUT}")
   local exec_args=(-T)
@@ -89,6 +91,7 @@ runtime_exec() {
       WECHAT_ACCOUNT_ID="$WECHAT_ACCOUNT_ID" \
       WECHAT_BOT_NAME="$WECHAT_BOT_NAME" \
       WECHAT_CHAT_TYPE="$WECHAT_CHAT_TYPE" \
+      MESSAGE_WINDOW="$MESSAGE_WINDOW" \
       SEND_KEY="$SEND_KEY" \
       SEND_TIMEOUT="$SEND_TIMEOUT" \
       "$@"

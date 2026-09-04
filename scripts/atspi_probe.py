@@ -27,7 +27,9 @@ from datetime import datetime, timezone
 from typing import Any, Iterator, Sequence
 
 from atspi_parse import (
+    CHATS_CONTAINER_NAMES,
     INPUT_NAMES,
+    MESSAGE_CONTAINER_NAMES,
     extract_group_events,
     find_chats_root,
     find_messages_root,
@@ -60,6 +62,7 @@ except (ImportError, ValueError) as exc:  # pragma: no cover - 容器依赖，�
 
 
 DEFAULT_APP_PATTERN = r"(?i)(wechat|weixin|微信)"
+DEFAULT_MESSAGE_WINDOW = 10
 # 订阅会唤醒扫描器的 AT-SPI 事件，轮询仍作为兼容兜底路径保留。
 EVENT_TYPES = (
     "object:children-changed",
@@ -225,6 +228,61 @@ def walk_tree(
                     stack.append((child, path + (index,), depth + 1))
             except Exception as exc:  # noqa: BLE001 - 远程节点失效属于预期情况
                 diagnostics.once("node_child_unavailable", exc, path=list(path), child_index=index)
+
+
+def scan_watch_tree(
+    root: Any,
+    diagnostics: Diagnostics,
+    max_depth: int,
+    message_window: int,
+) -> list[tuple[Any, NodeSnapshot]]:
+    """读取 watch 所需的局部控件树，避免访问 Messages 历史子树。
+
+    普通上层节点仍按 ``max_depth`` 遍历；Chats 只取直接会话行，Messages
+    只取末尾 ``message_window`` 个直接子节点。窗口外节点不会被远程访问。
+    """
+    snapshots: list[tuple[Any, NodeSnapshot]] = []
+    stack: list[tuple[Any, tuple[int, ...], int]] = [(root, (), 0)]
+    while stack:
+        node, path, depth = stack.pop()
+        current = snapshot(node, path, diagnostics)
+        snapshots.append((node, current))
+
+        role = normalized(current.role)
+        name = normalized(current.name)
+        if role == "list" and name in MESSAGE_CONTAINER_NAMES:
+            start = max(0, current.child_count - message_window)
+            for index in range(start, current.child_count):
+                try:
+                    child = node.get_child_at_index(index)
+                    if child is not None:
+                        child_path = path + (index,)
+                        snapshots.append((child, snapshot(child, child_path, diagnostics)))
+                except Exception as exc:  # noqa: BLE001 - 远程节点可能在滚动时失效
+                    diagnostics.once("message_child_unavailable", exc, path=list(path), child_index=index)
+            continue
+
+        if role == "list" and name in CHATS_CONTAINER_NAMES:
+            for index in range(current.child_count):
+                try:
+                    child = node.get_child_at_index(index)
+                    if child is not None:
+                        child_path = path + (index,)
+                        snapshots.append((child, snapshot(child, child_path, diagnostics)))
+                except Exception as exc:  # noqa: BLE001 - 远程节点可能在刷新时失效
+                    diagnostics.once("chat_child_unavailable", exc, path=list(path), child_index=index)
+            continue
+
+        if depth >= max_depth:
+            continue
+        for index in range(current.child_count - 1, -1, -1):
+            try:
+                child = node.get_child_at_index(index)
+                if child is not None:
+                    stack.append((child, path + (index,), depth + 1))
+            except Exception as exc:  # noqa: BLE001 - 远程节点失效属于预期情况
+                diagnostics.once("node_child_unavailable", exc, path=list(path), child_index=index)
+    return snapshots
 
 
 def find_wechat_application(pattern: re.Pattern[str], diagnostics: Diagnostics) -> Any | None:
@@ -712,6 +770,7 @@ def watch(
     account_id: str,
     chat_type: str,
     bot_name: str,
+    message_window: int,
 ) -> int:
     """监听控件树，只对“当前打开且为群聊”的会话输出消息事件。
 
@@ -745,6 +804,7 @@ def watch(
         emit_existing=emit_existing,
         chat_type=chat_type,
         bot_name=bot_name or "",
+        message_window=message_window,
     )
 
     try:
@@ -753,7 +813,7 @@ def watch(
             started = time.monotonic()
             app = find_wechat_application(app_pattern, diagnostics)
             if app is not None:
-                nodes = list(walk_tree(app, diagnostics, max_depth))
+                nodes = scan_watch_tree(app, diagnostics, max_depth, message_window)
                 snapshots = [sn.as_record() for _, sn in nodes]
                 events, report = extract_group_events(
                     snapshots,
@@ -838,6 +898,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("mode", choices=("dump", "watch", "send"), help="probe operation")
     parser.add_argument("--app-pattern", default=DEFAULT_APP_PATTERN, help="regular expression for app name")
     parser.add_argument("--max-depth", type=positive_int, default=40, help="maximum tree traversal depth")
+    parser.add_argument(
+        "--message-window",
+        type=positive_int,
+        default=os.environ.get("MESSAGE_WINDOW", str(DEFAULT_MESSAGE_WINDOW)),
+        help="watch 只扫描 Messages 末尾的消息条数（默认 10）",
+    )
     parser.add_argument("--poll-interval", type=positive_float, default=1.0, help="watch poll interval in seconds")
     parser.add_argument("--emit-existing", action="store_true", help="emit candidates found in the initial scan")
     parser.add_argument("--verbose", action="store_true", help="do not rate-limit repeated diagnostics")
@@ -927,6 +993,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.account_id,
         args.chat_type,
         args.bot_name,
+        args.message_window,
     )
 
 

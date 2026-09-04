@@ -21,6 +21,7 @@ services:
       # 机器人昵称从项目环境变量读取，可由宿主机环境覆盖。
       WECHAT_BOT_NAME: "${WECHAT_BOT_NAME}"
       WECHAT_CHAT_TYPE: "${WECHAT_CHAT_TYPE:-auto}"
+      MESSAGE_WINDOW: "${MESSAGE_WINDOW:-10}"
       SEND_KEY: "${SEND_KEY:-enter}"
       SEND_TIMEOUT: "${SEND_TIMEOUT:-10s}"
     ports:
